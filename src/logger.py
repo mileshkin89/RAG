@@ -1,5 +1,5 @@
 import logging
-from .config import config
+from config import config
 
 
 def get_logger(name: str = __name__) -> logging.Logger:
@@ -27,14 +27,14 @@ def get_logger(name: str = __name__) -> logging.Logger:
 
         config.LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(config.LOG_PATH, encoding='utf-8')
-        file_handler.setLevel(logging.INFO)
+        file_handler.setLevel(logging.WARNING)
         file_formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
         file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)
 
-        logger.setLevel(logging.WARNING)
+        logger.setLevel(logging.INFO)
 
         logging.getLogger("httpx").setLevel(logging.WARNING)
 
