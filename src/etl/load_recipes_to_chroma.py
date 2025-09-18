@@ -1,10 +1,9 @@
 # etl/load_recipes_to_chroma.py
 
-import re
 import csv
 import hashlib
-from datetime import timedelta
-from sentence_transformers import SentenceTransformer
+import time
+from chromadb.utils import embedding_functions
 
 from db.client import chromadb_client
 from dto import RecipesDTO
@@ -16,18 +15,25 @@ logger = get_logger(__name__)
 CHUNK_SIZE = 1000
 csv_file = config.DATASET_DIR / "food_recipes.csv"
 
-embedder = SentenceTransformer(config.EMBEDDER)
-collection_name = config.COLLECTION_NAME
-
 # Store only unique "recipe_title" hashes
 seen_titles = set()
 
 
+embedding_func = embedding_functions.SentenceTransformerEmbeddingFunction(
+    model_name=config.EMBEDDER_NAME
+)
+collection_name = config.COLLECTION_NAME
+
+# Try to get existing collection, or create new one with embedding_function
 try:
     collection = chromadb_client.get_collection(name=collection_name)
     logger.info(f"Using existing collection '{collection_name}'")
-except Exception:
-    collection = chromadb_client.create_collection(name=collection_name)
+except ValueError:
+    # Collection does not exist, create new one with embedding_function
+    collection = chromadb_client.create_collection(
+        name=collection_name,
+        embedding_function=embedding_func
+    )
     logger.info(f"Created new collection '{collection_name}'")
 
 
@@ -43,31 +49,6 @@ def _hasher(title: str) -> str:
         str: hash in hex format.
     """
     return hashlib.sha256(title.strip().lower().encode("utf-8")).hexdigest()
-
-
-def _parse_time(time_str: str) -> timedelta:
-    """
-    Parse a time duration string (e.g., "8M", "2H") into a timedelta object.
-
-    Supported suffixes:
-        - "M" for minutes
-        - "H" for hours
-
-    Args:
-        time_str (str): A string representing the duration (e.g., "15M").
-
-    Returns:
-        timedelta: A timedelta object representing the parsed duration.
-
-    """
-    match = re.match(r"(\d+)([MH])", time_str.upper())
-    if not match:
-        return timedelta(0)
-    value, unit = match.groups()
-    if unit == "M":
-        return timedelta(minutes=int(value))
-    elif unit == "H":
-        return timedelta(hours=int(value))
 
 
 def _row_to_dto(row: dict) -> RecipesDTO:
@@ -124,20 +105,18 @@ def _validate_row(row: dict) -> bool:
 
 def load_in_db(documents, metadatas, ids):
     """
-    Generate embeddings and add documents into Chroma.
+    Add documents into Chroma.
 
     Args:
         documents (list[str]): List of texts.
         metadatas (list[dict]): List of metadata dicts.
         ids (list[str]): List of document IDs.
     """
-    embeddings = embedder.encode(documents, show_progress_bar=True)
 
     collection.add(
         documents=documents,
         metadatas=metadatas,
         ids=ids,
-        embeddings=embeddings.tolist()
     )
     logger.info(f"Inserted {len(documents)} rows into collection '{collection_name}'")
 
@@ -145,6 +124,8 @@ def load_in_db(documents, metadatas, ids):
 def main():
     documents, metadatas, ids = [], [], []
     total_inserted = 0
+
+    start = time.perf_counter()
 
     # Extract
     with open(csv_file, newline='', encoding='utf-8') as f:
@@ -188,6 +169,9 @@ def main():
             load_in_db(documents, metadatas, ids)
             total_inserted += len(documents)
 
+    total = time.perf_counter() - start
+
+    logger.info(f"ETL finished in {total:.3f}s")
     logger.info(f"ETL finished. Total rows: {idx}. Total inserted: {total_inserted} rows into '{collection_name}'")
 
 

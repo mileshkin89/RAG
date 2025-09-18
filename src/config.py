@@ -1,4 +1,4 @@
-
+import os
 from pathlib import Path
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -16,13 +16,14 @@ class AppConfig(BaseSettings):
     LOG_PATH: Path = BASE_DIR / "logs" / "app.log"
 
     COLLECTION_NAME: str = 'recipes'
-    EMBEDDER: str = 'all-MiniLM-L6-v2'
+    EMBEDDER_NAME: str = 'all-MiniLM-L6-v2'
+
+    OPENAI_API_KEY: str = os.getenv('OPENAI_API_KEY')
 
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / "src/.env"),
         env_file_encoding="utf-8"
     )
-
 
 
 # Global application config instance
