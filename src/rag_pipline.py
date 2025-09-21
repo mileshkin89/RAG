@@ -1,8 +1,6 @@
 # query.py
 
 import time
-from chromadb.utils import embedding_functions
-
 from langchain_openai import ChatOpenAI
 from langchain.prompts import (
     PromptTemplate,
@@ -12,8 +10,10 @@ from langchain.prompts import (
 )
 from langchain_core.output_parsers import StrOutputParser
 
-from db.client import chromadb_client
 from config import config
+from db.collection import get_or_create_collection
+from db.embedding_func import get_embedding_func
+
 
 review_template_str = """
     Your task is to answer user questions about dishes from different cuisines. 
@@ -31,10 +31,9 @@ review_template_str = """
 def get_context(query: str):
     start = time.perf_counter()
 
-    embedding_func = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name=config.EMBEDDER_NAME
-    )
-    collection = chromadb_client.get_collection(name=config.COLLECTION_NAME)
+    embedding_func = get_embedding_func(config.EMBEDDER_NAME)
+
+    collection = get_or_create_collection(config.COLLECTION_NAME)
 
     query_embeddings = embedding_func([query])
 
@@ -81,8 +80,8 @@ def get_llm_response(query: str, context: str):
 
     response = review_chain.invoke({"context": context, "query": query})
 
-    response_total = time.perf_counter() - start
-    print(f"\n[Get response from LLM in {response_total:.3f}s]\n")
+    response_time = time.perf_counter() - start
+    print(f"\n[Get response from LLM in {response_time:.3f}s]\n")
 
     return response
 
