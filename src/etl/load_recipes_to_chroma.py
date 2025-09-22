@@ -10,13 +10,15 @@ The pipeline ensures row validation, duplicate handling via deterministic IDs,
 and progress tracking with tqdm.
 """
 
-# etl/load_recipes_to_chroma.py
+# etl.load_recipes_to_chroma.py
 
 import csv
 import hashlib
 import time
 from pathlib import Path
-from typing import Iterator, Tuple, List
+from typing import Iterator, Tuple, List, Optional
+
+from pydantic import ValidationError
 from tqdm import tqdm
 
 from db.collection import get_or_create_collection
@@ -44,34 +46,22 @@ def _hasher(text: str) -> str:
     return hashlib.sha256(text.strip().lower().encode("utf-8")).hexdigest()
 
 
-def _row_to_dto(row: dict) -> RecipesDTO:
+def _row_to_dto(row: dict) -> Optional[RecipesDTO]:
     """
-    Convert a CSV row dictionary into a RecipesDTO object.
+    Convert a CSV row dictionary into a RecipesDTO object with Pydantic validation.
 
     Args:
         row (dict): Dictionary representing a single CSV row.
 
     Returns:
-        RecipesDTO: Data transfer object with recipe information.
+        RecipesDTO | None: Data transfer object otherwise None.
     """
-    return RecipesDTO(
-        recipe_title=row.get("recipe_title", "").strip(),
-        url=row.get("url", "").strip(),
-        record_health=row.get("record_health", "").strip(),
-        vote_count=int(row.get("vote_count") or 0),
-        rating=float(row.get("rating") or 0.0),
-        description=row.get("description", "").strip(),
-        cuisine=row.get("cuisine", "").strip(),
-        course=row.get("course", "").strip(),
-        diet=row.get("diet", "").strip(),
-        prep_time=row.get("prep_time", "").strip(),
-        cook_time=row.get("cook_time", "").strip(),
-        ingredients=row.get("ingredients", "").strip(),
-        instructions=row.get("instructions", "").strip(),
-        author=row.get("author", "").strip(),
-        tags=row.get("tags", "").strip(),
-        category=row.get("category", "").strip(),
-    )
+    try:
+        dto = RecipesDTO(**row)
+        return dto
+    except ValidationError as e:
+        logger.warning(f"String validation error: {e}")
+        return None
 
 
 def _validate_row(row: dict) -> bool:
@@ -89,7 +79,6 @@ def _validate_row(row: dict) -> bool:
         if not value or str(value).strip().lower() in {"nan", "null", "none"}:
             logger.warning(f"Skipped row with empty or invalid item. item[key]: `{key}`, item[value]: `{value}`, row: {row}")
             return False
-
     return True
 
 
@@ -165,6 +154,9 @@ def transform(idx: int, row: dict) -> Tuple[str, dict, str] | None:
         logger.warning(f"Skipping row {idx}: {e}")
         return None
 
+    if dto is None:
+        return None
+
     documents = f"{dto.recipe_title}. {dto.description}. {dto.instructions}."
     metadata = {
         "title": dto.recipe_title,
@@ -233,7 +225,6 @@ def main():
 
     logger.info(f"ETL finished in {total:.3f}s")
     logger.info(f"Total rows: {total_rows}. Total upserted: {total_inserted} rows into '{config.COLLECTION_NAME}'")
-
 
 
 
